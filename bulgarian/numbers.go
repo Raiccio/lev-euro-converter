@@ -89,7 +89,11 @@ func NumberToWordsEUR(amount float64) string {
 		} else {
 			result.WriteString("нула")
 		}
-		result.WriteString(" евроцента")
+		if partsEUR.Cents == 1 {
+			result.WriteString(" евроцент")
+		} else {
+			result.WriteString(" евроцента")
+		}
 	}
 
 	return result.String()

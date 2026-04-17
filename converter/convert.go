@@ -152,7 +152,11 @@ func processBGNAmounts(content string) string {
 			eurAmount := bulgarian.ConvertToEUR(num)
 
 			if currency == "стотинки" || currency == "ст." {
-				return fmt.Sprintf("%.2f евроцента", eurAmount)
+				cents := int(eurAmount * 100)
+	if cents == 1 {
+		return fmt.Sprintf("%.2f евроцент", eurAmount)
+	}
+	return fmt.Sprintf("%.2f евроцента", eurAmount)
 			}
 
 			return fmt.Sprintf("%.2f евро", eurAmount)
