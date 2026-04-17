@@ -57,7 +57,12 @@ func convertDOCX(inputPath, outputPath string) error {
 	}
 	defer inputFile.Close()
 
-	zipReader, err := zip.NewReader(inputFile, 0)
+	fi, err := inputFile.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat input file: %w", err)
+	}
+
+	zipReader, err := zip.NewReader(inputFile, fi.Size())
 	if err != nil {
 		return fmt.Errorf("failed to read docx as zip: %w", err)
 	}
@@ -120,14 +125,15 @@ var (
 	centWords        = []string{"стотинки", "ст."}
 
 	replacementPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`(\d{1,3}(?:\s?\d{3})*(?:[.,]\d+)?)\s*(лв\.|лв|лева|lv|LV)`),
-		regexp.MustCompile(`(\d{1,3}(?:\s?\d{3})*(?:[.,]\d+)?)\s*(стотинки|ст\.)`),
+		regexp.MustCompile(`([0-9]+[0-9\s,.]*)\s*(?:лв\.|лв|лева|lv|LV)`),
+		regexp.MustCompile(`([0-9]+[0-9\s,.]*)\s*(?:стотинки|ст\.)`),
 	}
 
-	slashBracketPattern = regexp.MustCompile(`(\d[\d\s]*(?:[.,]\d+)?)\s*(/\([^)]+\)/|\([^)]+\)|/[\p{Lu}\p{Ll}\s]+/)`)
+	slashBracketPattern = regexp.MustCompile(`([0-9][0-9\s]*(?:[.,][0-9]+)?)\s*(/\([^)]+\)/|\([^)]+\)|/[\p{Lu}\p{Ll}\s]+/)`)
 )
 
 func processBGNAmounts(content string) string {
+	content = strings.ReplaceAll(content, "\xa0", " ")
 	for _, pattern := range replacementPatterns {
 		content = pattern.ReplaceAllStringFunc(content, func(match string) string {
 			parts := pattern.FindStringSubmatch(match)
@@ -253,7 +259,22 @@ var (
 		"петстотин": 500, "шестстотин": 600, "седемстотин": 700,
 		"осемстотин": 800, "деветстотин": 900,
 		"хиляда": 1000, "две хиляди": 2000, "три хиляди": 3000,
-		"четири хиляди": 4000, "пет хиляди": 5000,
+		"четири хиляди": 4000, "пет хиляди": 5000, "шест хиляди": 6000,
+		"седем хиляди": 7000, "осем хиляди": 8000, "девет хиляди": 9000,
+		"дванадесет хиляди": 12000, "тринадесет хиляди": 13000,
+		"четиринадесет хиляди": 14000, "петнадесет хиляди": 15000,
+		"шестнадесет хиляди": 16000, "седемнадесет хиляди": 17000,
+		"осемнадесет хиляди": 18000, "деветнадесет хиляди": 19000,
+		"двадесет хиляди": 20000, "тридесет хиляди": 30000,
+		"четиридесет хиляди": 40000, "петдесет хиляди": 50000,
+		"шестдесет хиляди": 60000, "седемдесет хиляди": 70000,
+		"осемдесет хиляди": 80000, "деветдесет хиляди": 90000,
+		"сто хиляди": 100000, "двеста хиляди": 200000,
+		"триста хиляди": 300000, "четиристотин хиляди": 400000,
+		"петстотин хиляди": 500000, "шестстотин хиляди": 600000,
+		"седемстотин хиляди": 700000, "осемстотин хиляди": 800000,
+		"деветстотин хиляди": 900000,
+		"дванадесет хиляди и петстотин": 12500,
 	}
 )
 

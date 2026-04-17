@@ -41,11 +41,16 @@ type NumberParts struct {
 
 func ParseBulgarianNumber(s string) (float64, error) {
 	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "\xa0", " ")
 	s = strings.ReplaceAll(s, " ", "")
 	s = strings.ReplaceAll(s, ",", ".")
 
 	if strings.HasPrefix(s, "0.") && len(s) > 2 {
 		s = "." + s[2:]
+	}
+
+	if s == "" {
+		return 0, fmt.Errorf("empty string")
 	}
 
 	return strconv.ParseFloat(s, 64)
