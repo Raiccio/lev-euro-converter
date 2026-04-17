@@ -3,6 +3,7 @@ package gui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -15,9 +16,11 @@ import (
 	"github.com/raiccio/lev-euro-converter/converter"
 )
 
+var appInstance fyne.App
+
 func Run() {
-	a := app.New()
-	w := a.NewWindow("lev-euro-converter")
+	appInstance = app.New()
+	w := appInstance.NewWindow("lev-euro-converter")
 	w.Resize(fyne.NewSize(550, 500))
 	w.CenterOnScreen()
 
@@ -52,31 +55,41 @@ func Run() {
 		},
 	)
 
-	status := widget.NewLabel("Готово")
+	status := widget.NewLabel("Избери папка с DOCX файлове")
 	status.Alignment = fyne.TextAlignCenter
 
-	selectBtn := widget.NewButton("Избери файлове", func() {
-		dialog.ShowFileOpen(func(f fyne.URIReadCloser, err error) {
-			if f == nil || err != nil {
+	selectBtn := widget.NewButton("Избери папка", func() {
+		dialog.ShowFolderOpen(func(dir fyne.ListableURI, err error) {
+			if dir == nil || err != nil {
+				status.SetText("Грешка при избора на папка")
 				return
 			}
-			defer f.Close()
 
-			dir := filepath.Dir(f.URI().Path())
-			entries, _ := os.ReadDir(dir)
+			dirPath := dir.Path()
+			entries, err := os.ReadDir(dirPath)
+			if err != nil {
+				status.SetText(fmt.Sprintf("Грешка: %v", err))
+				return
+			}
+
 			files = []string{}
 			outputFiles = []string{}
 
 			for _, entry := range entries {
 				name := entry.Name()
-				if strings.HasSuffix(strings.ToLower(name), ".docx") && !strings.HasSuffix(name, "_eur.docx") {
-					files = append(files, filepath.Join(dir, name))
+				if !entry.IsDir() && strings.HasSuffix(strings.ToLower(name), ".docx") && !strings.HasSuffix(name, "_eur.docx") {
+					files = append(files, filepath.Join(dirPath, name))
 				}
 			}
 
 			fileList.Refresh()
 			outputList.Refresh()
-			status.SetText(fmt.Sprintf("Избрани: %d файла", len(files)))
+
+			if len(files) == 0 {
+				status.SetText("Няма DOCX файлове в папката")
+			} else {
+				status.SetText(fmt.Sprintf("Избрани: %d файла", len(files)))
+			}
 		}, w)
 	})
 
@@ -121,6 +134,18 @@ func Run() {
 	})
 	convertBtn.Importance = widget.HighImportance
 
+	openBtn := widget.NewButton("Отвори папка", func() {
+		if len(outputFiles) > 0 {
+			dir := filepath.Dir(outputFiles[0])
+			openExplorer(dir)
+		} else if len(files) > 0 {
+			dir := filepath.Dir(files[0])
+			openExplorer(dir)
+		} else {
+			status.SetText("Няма файлове")
+		}
+	})
+
 	versionLabel := widget.NewLabel("v1.0.0")
 
 	scrollIn := container.NewVScroll(fileList)
@@ -140,6 +165,7 @@ func Run() {
 		widget.NewLabel("Изходни файлове:"),
 		scrollOut,
 		status,
+		openBtn,
 		versionLabel,
 	)
 
@@ -152,4 +178,9 @@ func getOutputPath(input string) string {
 	ext := filepath.Ext(input)
 	name := strings.TrimSuffix(filepath.Base(input), ext)
 	return filepath.Join(dir, name+"_eur"+ext)
+}
+
+func openExplorer(path string) error {
+	cmd := exec.Command("explorer", path)
+	return cmd.Start()
 }
