@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -9,43 +10,27 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/raiccio/lev-euro-converter/converter"
 )
 
 func Run() {
-	a := app.NewWithID("lev-euro-converter")
-	a.SetTheme(theme.DarkTheme())
-
+	a := app.New()
 	w := a.NewWindow("lev-euro-converter")
-	w.SetMinSize(fyne.NewSize(550, 450))
+	w.Resize(fyne.NewSize(550, 500))
 	w.CenterOnScreen()
 
-	mainUI(a, w)
-	w.ShowAndRun()
-}
-
-func mainUI(a fyne.App, w fyne.Window) {
 	files := []string{}
 	outputFiles := []string{}
 
-	title := widget.NewLabelWithStyle(
-		"lev-euro-converter",
-		fyne.TextAlignCenter,
-		fyne.TextStyle{Bold: true, Size: 28},
-	)
+	title := widget.NewLabel("lev-euro-converter")
+	title.Alignment = fyne.TextAlignCenter
 
-	subtitle := widget.NewLabelWithStyle(
-		"Конвертиране на DOCX документи от лева в евро",
-		fyne.TextAlignCenter,
-		fyne.TextStyle{Size: 14, Color: fyne.ColorHex("#888888")},
-	)
+	subtitle := widget.NewLabel("Конвертиране на DOCX от лева в евро")
+	subtitle.Alignment = fyne.TextAlignCenter
 
-	rateLabel := widget.NewLabel("📊 1 EUR = 1.95583 BGN")
-	rateLabel.Alignment = fyne.TextAlignCenter
+	rateLabel := widget.NewLabel("1 EUR = 1.95583 BGN")
 
 	fileList := widget.NewList(
 		func() int { return len(files) },
@@ -54,7 +39,6 @@ func mainUI(a fyne.App, w fyne.Window) {
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			obj.(*widget.Label).SetText(files[id])
-			obj.(*widget.Label).TextStyle = fyne.TextStyle{Monospace: true, Size: 12}
 		},
 	)
 
@@ -65,33 +49,38 @@ func mainUI(a fyne.App, w fyne.Window) {
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			obj.(*widget.Label).SetText(outputFiles[id])
-			obj.(*widget.Label).TextStyle = fyne.TextStyle{Monospace: true, Size: 12}
 		},
 	)
 
 	status := widget.NewLabel("Готово")
 	status.Alignment = fyne.TextAlignCenter
 
-	selectBtn := widget.NewButtonWithIcon("Избери файлове", theme.FileIcon(), func() {
-		dialog.ShowOpenMultiFileDialog(w, func(filesRead []fyne.URI) {
-			if len(filesRead) == 0 {
+	selectBtn := widget.NewButton("Избери файлове", func() {
+		dialog.ShowFileOpen(func(f fyne.URIReadCloser, err error) {
+			if f == nil || err != nil {
 				return
 			}
+			defer f.Close()
+
+			dir := filepath.Dir(f.URI().Path())
+			entries, _ := os.ReadDir(dir)
 			files = []string{}
 			outputFiles = []string{}
-			for _, uri := range filesRead {
-				path := uri.Path()
-				if strings.HasSuffix(strings.ToLower(path), ".docx") {
-					files = append(files, path)
+
+			for _, entry := range entries {
+				name := entry.Name()
+				if strings.HasSuffix(strings.ToLower(name), ".docx") && !strings.HasSuffix(name, "_eur.docx") {
+					files = append(files, filepath.Join(dir, name))
 				}
 			}
+
 			fileList.Refresh()
 			outputList.Refresh()
 			status.SetText(fmt.Sprintf("Избрани: %d файла", len(files)))
-		})
+		}, w)
 	})
 
-	clearBtn := widget.NewButtonWithIcon("Изчисти", theme.CancelIcon(), func() {
+	clearBtn := widget.NewButton("Изчисти", func() {
 		files = []string{}
 		outputFiles = []string{}
 		fileList.Refresh()
@@ -99,9 +88,9 @@ func mainUI(a fyne.App, w fyne.Window) {
 		status.SetText("Готово")
 	})
 
-	convertBtn := widget.NewButtonWithIcon("Конвертирай", theme.MediaPlayIcon(), func() {
+	convertBtn := widget.NewButton("Конвертирай", func() {
 		if len(files) == 0 {
-			status.SetText("Моля, изберете файлове първо")
+			status.SetText("Няма избрани файлове")
 			return
 		}
 
@@ -111,76 +100,51 @@ func mainUI(a fyne.App, w fyne.Window) {
 		outputFiles = []string{}
 
 		for _, f := range files {
-			outputPath := getOutputPath(f)
-			err := converter.ConvertDOCX(f, outputPath)
+			outPath := getOutputPath(f)
+			err := converter.ConvertDOCX(f, outPath)
 			if err != nil {
 				status.SetText(fmt.Sprintf("Грешка: %v", err))
 				errors++
 				continue
 			}
-			outputFiles = append(outputFiles, outputPath)
+			outputFiles = append(outputFiles, outPath)
 			success++
 		}
 
 		outputList.Refresh()
 
 		if errors == 0 {
-			status.SetText(fmt.Sprintf("✓ Готово: %d файла", success))
+			status.SetText(fmt.Sprintf("Готово: %d файла", success))
 		} else {
-			status.SetText(fmt.Sprintf("Конвертирани: %d, Грешки: %d", success, errors))
+			status.SetText(fmt.Sprintf("Успешни: %d, Грешки: %d", success, errors))
 		}
 	})
 	convertBtn.Importance = widget.HighImportance
 
-	openOutputBtn := widget.NewButton("Отвори изходна папка", func() {
-		if len(outputFiles) > 0 {
-			dir := filepath.Dir(outputFiles[0])
-			a.OpenURL("file:///" + dir)
-		}
-	})
+	versionLabel := widget.NewLabel("v1.0.0")
 
-	versionLabel := widget.NewLabelWithStyle(
-		"v1.0.0",
-		fyne.TextAlignCenter,
-		fyne.TextStyle{Size: 11, Color: fyne.ColorHex("#666666")},
-	)
+	scrollIn := container.NewVScroll(fileList)
+	scrollIn.SetMinSize(fyne.NewSize(500, 100))
 
-	scrollContainer := container.NewVScroll(fileList)
-	scrollContainer.SetMinSize(fyne.NewSize(400, 100))
-
-	outputScrollContainer := container.NewVScroll(outputList)
-	outputScrollContainer.SetMinSize(fyne.NewSize(400, 100))
+	scrollOut := container.NewVScroll(outputList)
+	scrollOut.SetMinSize(fyne.NewSize(500, 100))
 
 	content := container.NewVBox(
-		layout.NewSpacer(),
 		title,
 		subtitle,
-		layout.NewSpacer(),
-		container.NewHBox(
-			selectBtn,
-			clearBtn,
-		),
-		layout.NewSpacer(),
-		widget.NewLabelWithStyle("Входни файлове:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true, Size: 14}),
-		scrollContainer,
-		layout.NewSpacer(),
 		rateLabel,
-		layout.NewSpacer(),
+		container.NewHBox(selectBtn, clearBtn),
+		widget.NewLabel("Входни файлове:"),
+		scrollIn,
 		convertBtn,
-		layout.NewSpacer(),
-		widget.NewLabelWithStyle("Изходни файлове:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true, Size: 14}),
-		outputScrollContainer,
-		layout.NewSpacer(),
-		openOutputBtn,
-		layout.NewSpacer(),
+		widget.NewLabel("Изходни файлове:"),
+		scrollOut,
 		status,
 		versionLabel,
-		layout.NewSpacer(),
 	)
 
-	content.Padding = layout.NewInset(20)
-	content.Layout = layout.NewVBoxLayout()
 	w.SetContent(content)
+	w.ShowAndRun()
 }
 
 func getOutputPath(input string) string {
