@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('converter_numbers.py', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

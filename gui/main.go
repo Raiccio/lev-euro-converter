@@ -21,7 +21,7 @@ var appInstance fyne.App
 func Run() {
 	appInstance = app.New()
 	w := appInstance.NewWindow("lev-euro-converter")
-	w.Resize(fyne.NewSize(550, 500))
+	w.Resize(fyne.NewSize(650, 650))
 	w.CenterOnScreen()
 
 	files := []string{}

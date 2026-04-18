@@ -5,7 +5,6 @@ Uses python-docx for reliable DOCX handling
 
 import os
 import re
-import traceback
 from docx import Document
 from converter_numbers import convert_bgn_to_eur, format_eur_words, parse_bulgarian_number, word_to_number
 
@@ -23,48 +22,16 @@ def convert_docx(input_path, output_path):
     try:
         doc = Document(input_path)
         
-        # Process each paragraph
+        # Process paragraphs and their runs
         for paragraph in doc.paragraphs:
-            if paragraph.text and paragraph.text.strip():
-                old_text = paragraph.text
-                new_text, section_changes = process_text(paragraph.text)
-                if section_changes:
-                    changes.extend(section_changes)
-                    paragraph.text = new_text
+            process_paragraph(paragraph, changes)
         
-        # Process each table cell
+        # Process table cells and their runs
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
-                        if paragraph.text and paragraph.text.strip():
-                            old_text = paragraph.text
-                            new_text, section_changes = process_text(paragraph.text)
-                            if section_changes:
-                                changes.extend(section_changes)
-                                paragraph.text = new_text
-        
-        # Also process runs within paragraphs (some docx store text in runs)
-        for paragraph in doc.paragraphs:
-            for run in paragraph.runs:
-                if run.text and run.text.strip():
-                    old_text = run.text
-                    new_text, section_changes = process_text(run.text)
-                    if section_changes:
-                        changes.extend(section_changes)
-                        run.text = new_text
-        
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        for run in paragraph.runs:
-                            if run.text and run.text.strip():
-                                old_text = run.text
-                                new_text, section_changes = process_text(run.text)
-                                if section_changes:
-                                    changes.extend(section_changes)
-                                    run.text = new_text
+                        process_paragraph(paragraph, changes)
         
         doc.save(output_path)
         
@@ -74,8 +41,58 @@ def convert_docx(input_path, output_path):
         return {'success': False, 'changes': changes, 'error': str(e)}
 
 
+def process_paragraph(paragraph, changes):
+    """Process a paragraph, preserving run formatting"""
+    
+    # Skip empty paragraphs
+    if not paragraph.text or not paragraph.text.strip():
+        return
+    
+    # Check if this paragraph needs conversion
+    new_text, section_changes = process_text(paragraph.text)
+    if not section_changes:
+        return
+    
+    changes.extend(section_changes)
+    
+    # Build new runs while preserving formatting
+    # Strategy: Create new runs with the new text, preserving formatting from original runs
+    
+    # First, collect all runs' formatting
+    runs_data = []
+    for run in paragraph.runs:
+        runs_data.append({
+            'text': run.text,
+            'font_name': run.font.name,
+            'font_size': run.font.size,
+            'font_bold': run.font.bold,
+            'font_italic': run.font.italic,
+        })
+    
+    # Clear all runs
+    for _ in range(len(paragraph.runs)):
+        p = paragraph._element
+        p.remove(paragraph.runs[0]._element)
+    
+    # Add new run with new text and preserved formatting
+    if runs_data:
+        # Use formatting from first run as base
+        first_run = runs_data[0]
+        
+        run = paragraph.add_run(new_text)
+        
+        if first_run['font_name']:
+            run.font.name = first_run['font_name']
+        if first_run['font_size']:
+            run.font.size = first_run['font_size']
+        if first_run['font_bold']:
+            run.font.bold = first_run['font_bold']
+        if first_run['font_italic']:
+            run.font.italic = first_run['font_italic']
+
+
 def has_transliteration(text):
-    """Check if text has word transliteration"""
+    """Check if text has word transliteration in / or ()"""
     if not text:
         return False
     return bool(re.search(r'/[а-яА-Я\w]+/|/[а-яА-Я\w]+\)', text, re.IGNORECASE))
@@ -90,17 +107,17 @@ def process_text(text):
     if not text or not text.strip():
         return text, []
     
-    # Clean up \xa0 (non-breaking space) first
+    # Clean up \xa0 first
     text = text.replace('\xa0', ' ')
     text = text.replace('\u00a0', ' ')
     
     original_text = text
     changes = []
     
-    # Check if transliteration exists in this text segment
+    # Check if transliteration exists in this text (any /.../ or (...))
     text_has_transliteration = has_transliteration(text)
     
-    # Pattern 1: Slash patterns /word/ like "50 /петдесет/ лева"
+    # Pattern 1: Slash patterns like "50 /петдесет/ лева" 
     slash_pattern = r'(\d[\d\s]*(?:[.,]\d+)?)\s*/([а-яА-Я\w\s]+)/\s*(?:лева|лв\.?)'
     for match in re.findall(slash_pattern, text, re.IGNORECASE):
         number_str = match[0].strip()
@@ -112,46 +129,46 @@ def process_text(text):
         
         eur = convert_bgn_to_eur(amount)
         
-        # Convert word part
-        word_num = word_to_number(word_part)
-        if word_num and word_num > 0:
-            word_eur = convert_bgn_to_eur(word_num)
-            word_eur_words = format_eur_words(word_eur)
-            output = f"{eur:.2f} /{word_eur_words}/"
-        else:
-            output = f"{eur:.2f} /{word_part}/"
+        # Output: number + words in slashes
+        eur_words = format_eur_words(eur)
+        output = f"{eur:.2f} /{eur_words}/ евро"
         
-        search = f"{number_str} /{match[1]}/"
+        search = f"{number_str} /{word_part}/ лева"
         if search in text:
-            changes.append(f"{search}лева --> {output}евро")
+            changes.append(f"{search} --> {output}")
             text = text.replace(search, output)
+        else:
+            # Try without space before лева
+            search = f"{number_str} /{word_part}/лева"
+            if search in text:
+                changes.append(f"{search} --> {output}")
+                text = text.replace(search, output)
     
-    # Pattern 2: Paren patterns (word) like "50 (петдесет) лева"
+    # Pattern 2: Paren patterns like "50 (петдесет) лева"
     paren_pattern = r'(\d[\d\s]*(?:[.,]\d+)?)\s*\(([а-яА-Я\w\s]+)\)\s*(?:лева|лв\.?)'
     for match in re.findall(paren_pattern, text, re.IGNORECASE):
         number_str = match[0].strip()
-        word_part = match[1].strip()
         
         amount = parse_bulgarian_number(number_str)
         if amount is None:
             continue
         
         eur = convert_bgn_to_eur(amount)
+        eur_words = format_eur_words(eur)
+        output = f"{eur:.2f} ({eur_words}) евро"
         
-        word_num = word_to_number(word_part)
-        if word_num and word_num > 0:
-            word_eur = convert_bgn_to_eur(word_num)
-            word_eur_words = format_eur_words(word_eur)
-            output = f"{eur:.2f} ({word_eur_words})"
-        else:
-            output = f"{eur:.2f} ({word_part})"
-        
-        search = f"{number_str} ({match[1]})"
+        search = f"{number_str} ({match[1]}) лева"
         if search in text:
-            changes.append(f"{search}лева --> {output}евро")
+            changes.append(f"{search} --> {output}")
             text = text.replace(search, output)
+        else:
+            # Try without space
+            search = f"{number_str} ({match[1]})лева"
+            if search in text:
+                changes.append(f"{search} --> {output}")
+                text = text.replace(search, output)
     
-    # Pattern 3: Simple currency without words "100 лв." or "100 лева"
+    # Pattern 3: Simple currency (no words) - "100 лв." or "100 лева"
     currency_patterns = [
         r'(\d[\d\s]*(?:[.,]\d+)?)\s*(лв\.|лв|лева|lv|LV)',
         r'(\d[\d\s]*(?:[.,]\d+)?)\s*(стотинки|ст\.)',
@@ -168,13 +185,13 @@ def process_text(text):
             
             eur = convert_bgn_to_eur(amount)
             
-            # Format output based on original having transliteration or not
-            if currency.lower() in ['стотинки', 'ст.']:
-                output = f"{eur:.2f} евроцента"
+            # Only use Bulgarian words if text has transliteration elsewhere
+            if text_has_transliteration:
+                output = format_eur_words(eur)
             else:
-                if text_has_transliteration:
-                    eur_words = format_eur_words(eur)
-                    output = f"{eur:.2f} {eur_words}"
+                # Just output the number
+                if currency.lower() in ['стотинки', 'ст.']:
+                    output = f"{eur:.2f} евроцента"
                 else:
                     output = f"{eur:.2f} евро"
             
