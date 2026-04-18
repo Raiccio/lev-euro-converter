@@ -43,11 +43,12 @@ jobs:
           pyinstaller --onefile main.py
           mv dist/${{ matrix.exe_name }} dist/${{ matrix.artifact_name }}
 
-      - name: Upload artifact
+      - name: Upload artifact (no archive)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/${{ matrix.artifact_name }}
+          compression-level: 0
 
   release:
     needs: build
@@ -60,6 +61,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: .
+          merge-multiple: false
+
+      - name: Calculate checksums
+        run: |
+          sha256sum lev-euro-converter-win64.exe > SHA256SUMS.txt
+          sha256sum lev-euro-converter-linux >> SHA256SUMS.txt
+          md5sum lev-euro-converter-win64.exe > MD5SUMS.txt
+          md5sum lev-euro-converter-linux >> MD5SUMS.txt
+          cat SHA256SUMS.txt
+          echo "---"
+          cat MD5SUMS.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -67,5 +79,7 @@ jobs:
           files: |
             lev-euro-converter-win64.exe
             lev-euro-converter-linux
+            SHA256SUMS.txt
+            MD5SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
