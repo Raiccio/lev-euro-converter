@@ -5,11 +5,17 @@ on:
     types: [created]
 
 jobs:
-  build-and-release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            ext: .exe
+            name: lev-euro-converter-win64.exe
+          - os: ubuntu-latest
+            ext: ""
+            name: lev-euro-converter-linux
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,77 +28,67 @@ jobs:
       - name: Install dependencies
         run: pip install pyinstaller python-docx
 
-      - name: Build Windows exe
+      - name: Build on Windows
+        if: matrix.os == 'windows-latest'
         run: |
-          pip install pyinstaller python-docx
           pyinstaller --onefile --windowed main.py
-          mv dist/main.exe lev-euro-converter-win64.exe
-          ls -la lev-euro-converter-win64.exe
+          mv dist/main.exe ${{ matrix.name }}
 
-      - name: Build Linux binary
+      - name: Build on Linux
+        if: matrix.os == 'ubuntu-latest'
         run: |
           pyinstaller --onefile main.py
-          mv dist/main lev-euro-converter-linux
-          chmod +x lev-euro-converter-linux
-          ls -la lev-euro-converter-linux
+          mv dist/main ${{ matrix.name }}
+          chmod +x ${{ matrix.name }}
 
-      - name: Calculate checksums
+      - name: Calculate SHA256
         run: |
-          echo "lev-euro-converter-win64.exe:" > SHA256SUMS.txt
-          sha256sum lev-euro-converter-win64.exe >> SHA256SUMS.txt
-          echo "" >> SHA256SUMS.txt
-          echo "lev-euro-converter-linux:" >> SHA256SUMS.txt
-          sha256sum lev-euro-converter-linux >> SHA256SUMS.txt
-          
-          echo "lev-euro-converter-win64.exe:" > MD5SUMS.txt
-          md5sum lev-euro-converter-win64.exe >> MD5SUMS.txt
-          echo "" >> MD5SUMS.txt
-          echo "lev-euro-converter-linux:" >> MD5SUMS.txt
-          md5sum lev-euro-converter-linux >> MD5SUMS.txt
-          
-          cat SHA256SUMS.txt
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            powershell -Command "(Get-FileHash -Path '${{ matrix.name }}' -Algorithm SHA256).Hash" > SHA256.txt
+          else
+            sha256sum ${{ matrix.name }} > SHA256.txt
+          fi
+          cat SHA256.txt
+
+      - name: Calculate MD5
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            powershell -Command "(Get-FileHash -Path '${{ matrix.name }}' -Algorithm MD5).Hash" > MD5.txt
+          else
+            md5sum ${{ matrix.name }} > MD5.txt
+          fi
 
       - name: Get Release Info
         id: release
         run: |
           echo "upload_url=${{ github.event.release.upload_url }}" >> $GITHUB_OUTPUT
 
-      - name: Upload Windows exe
+      - name: Upload Binary
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.release.outputs.upload_url }}
-          asset_path: lev-euro-converter-win64.exe
-          asset_name: lev-euro-converter-win64.exe
+          asset_path: ${{ matrix.name }}
+          asset_name: ${{ matrix.name }}
           asset_content_type: application/octet-stream
 
-      - name: Upload Linux binary
+      - name: Upload SHA256
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.release.outputs.upload_url }}
-          asset_path: lev-euro-converter-linux
-          asset_name: lev-euro-converter-linux
-          asset_content_type: application/octet-stream
-
-      - name: Upload SHA256SUMS
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.release.outputs.upload_url }}
-          asset_path: SHA256SUMS.txt
-          asset_name: SHA256SUMS.txt
+          asset_path: SHA256.txt
+          asset_name: SHA256-${{ matrix.name }}.txt
           asset_content_type: text/plain
 
-      - name: Upload MD5SUMS
+      - name: Upload MD5
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.release.outputs.upload_url }}
-          asset_path: MD5SUMS.txt
-          asset_name: MD5SUMS.txt
+          asset_path: MD5.txt
+          asset_name: MD5-${{ matrix.name }}.txt
           asset_content_type: text/plain
