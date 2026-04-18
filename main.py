@@ -30,7 +30,10 @@ class ConverterApp:
         title = tk.Label(self.root, text="lev-euro-converter", font=("Arial", 16, "bold"))
         title.pack(pady=(10, 2))
         
-        subtitle = tk.Label(self.root, text="Конвертиране на DOCX от лева в евро", font=("Arial", 10))
+        byline = tk.Label(self.root, text="by Райчо Бадев", font=("Arial", 9, "italic"), fg="#666666")
+        byline.pack(pady=0)
+        
+        subtitle = tk.Label(self.root, text="Превалутиране на DOCX от лева в евро", font=("Arial", 10))
         subtitle.pack(pady=0)
         
         rate_label = tk.Label(self.root, text="1 EUR = 1.95583 BGN", font=("Arial", 9, "italic"))
@@ -60,12 +63,12 @@ class ConverterApp:
         scrollbar.config(command=self.file_listbox.yview)
         
         # Convert button
-        convert_btn = tk.Button(self.root, text="Конвертирай", command=self.convert_files, 
+        convert_btn = tk.Button(self.root, text="Превалутирай", command=self.convert_files, 
                          bg="#4CAF50", fg="white", font=("Arial", 11, "bold"), width=20)
         convert_btn.pack(pady=8)
         
         # Output/logs section
-        tk.Label(self.root, text="Конвертирани файлове и промени:", anchor=tk.W).pack(padx=20, pady=(5, 0), fill=tk.X)
+        tk.Label(self.root, text="Превалутирани файлове и промени:", anchor=tk.W).pack(padx=20, pady=(5, 0), fill=tk.X)
         
         log_frame = tk.Frame(self.root)
         log_frame.pack(padx=20, pady=5, fill=tk.BOTH, expand=True)
@@ -94,20 +97,56 @@ class ConverterApp:
         self.status_label = tk.Label(row_frame, text="Готово", font=("Arial", 9), anchor=tk.E)
         self.status_label.pack(side=tk.RIGHT, fill=tk.X, expand=True)
         
-        # Bottom info - version and email
+        # Bottom info - version, email, and links
         info_frame = tk.Frame(self.root)
         info_frame.pack(pady=8)
         
         version = tk.Label(info_frame, text="Version 1.0.1", font=("Arial", 8), fg="#666666")
         version.pack(side=tk.LEFT)
         
-        sep = tk.Label(info_frame, text=" • ", font=("Arial", 8), fg="#666666")
-        sep.pack(side=tk.LEFT)
+        self._add_link(info_frame, " • ", "#666666")
         
-        # Email - clickable
-        email = tk.Label(info_frame, text="badevraycho@gmail.com", font=("Arial", 8), fg="#0066CC", cursor="hand2")
-        email.pack(side=tk.LEFT)
-        email.bind("<Button-1>", lambda e: webbrowser.open("mailto:badevraycho@gmail.com"))
+        # Email
+        self._add_link(info_frame, "badevraycho@gmail.com", "#0066CC", 
+                       action=lambda: webbrowser.open("mailto:badevraycho@gmail.com"))
+        
+        # GitHub
+        self._add_link(info_frame, " • GitHub", "#0066CC",
+                       action=lambda: webbrowser.open("https://github.com/Raiccio/lev-euro-converter"))
+        
+        # Ko-fi
+        self._add_link(info_frame, " • Ko-fi", "#FF0000",
+                       action=lambda: webbrowser.open("https://ko-fi.com/raiccio"))
+        
+        # PayPal
+        self._add_link(info_frame, " • PayPal", "#003087",
+                       action=lambda: webbrowser.open("https://paypal.me/raiccio"))
+        
+        # ETH - copy to clipboard
+        self._add_link(info_frame, " • ETH", "#627EEA", cursor="cross",
+                       action=lambda: self._copy_to_clipboard("0x7e5eF910D8cBB020fC5F94ad4c4Ab93730303E1a", "ETH"))
+        
+        # BTC - copy to clipboard
+        self._add_link(info_frame, " • BTC", "#F7931A", cursor="cross",
+                       action=lambda: self._copy_to_clipboard("bc1q9z03t2g7jhfwgxh2v7kxjd2claxwygykn0n2s5", "BTC"))
+        
+        # SOL - copy to clipboard
+        self._add_link(info_frame, " • SOL", "#9945FF", cursor="cross",
+                       action=lambda: self._copy_to_clipboard("J2oYj6eZQfcb5H58caTBAFN4YX2jQ1CMyXQfm1tgZADf", "SOL"))
+    
+    def _add_link(self, parent, text, color, cursor="hand2", action=None):
+        """Helper to create a clickable link"""
+        label = tk.Label(parent, text=text, font=("Arial", 8), fg=color, cursor=cursor)
+        label.pack(side=tk.LEFT)
+        if action:
+            label.bind("<Button-1>", lambda e: action())
+        return label
+    
+    def _copy_to_clipboard(self, text, label):
+        """Copy text to clipboard and show status"""
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.status_label.config(text=f"{label} address copied!")
     
     def add_files(self):
         filenames = filedialog.askopenfilenames(
@@ -133,7 +172,7 @@ class ConverterApp:
             self.status_label.config(text="Няма избрани файлове")
             return
         
-        self.status_label.config(text="Конвертиране...")
+        self.status_label.config(text="Превалутиране...")
         self.root.update()
         
         success = 0
@@ -144,7 +183,7 @@ class ConverterApp:
                 output_path = get_output_path(filename)
                 basename = os.path.basename(filename)
                 
-                self.log_listbox.insert(tk.END, f"Конвертиране: {basename}...")
+                self.log_listbox.insert(tk.END, f"Превалутиране: {basename}...")
                 self.log_listbox.see(tk.END)
                 self.root.update()
                 
