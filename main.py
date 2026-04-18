@@ -15,7 +15,11 @@ class ConverterApp:
     def __init__(self, root):
         self.root = root
         self.root.title("lev-euro-converter")
-        self.root.geometry("600x500")
+        self.root.geometry("600x550")
+        
+        # Make GUI resizable
+        self.root.resizable(True, True)
+        self.root.minsize(400, 400)
         
         # Selected files
         self.files = []
@@ -53,7 +57,7 @@ class ConverterApp:
         scrollbar = tk.Scrollbar(list_frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        self.file_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED, height=10)
+        self.file_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED)
         self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.file_listbox.config(yscrollcommand=scrollbar.set)
         scrollbar.config(command=self.file_listbox.yview)
@@ -72,7 +76,7 @@ class ConverterApp:
         out_scrollbar = tk.Scrollbar(out_list_frame)
         out_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        self.output_listbox = tk.Listbox(out_list_frame, height=5)
+        self.output_listbox = tk.Listbox(out_list_frame)
         self.output_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.output_listbox.config(yscrollcommand=out_scrollbar.set)
         out_scrollbar.config(command=self.output_listbox.yview)

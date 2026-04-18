@@ -11,13 +11,21 @@ from converter_numbers import convert_bgn_to_eur, format_eur_words, parse_bulgar
 
 RATE = 1.95583
 
+# Debug flag - set to True to see what's happening
+DEBUG = False
+
+def debug_print(msg):
+    if DEBUG:
+        print(f"[DEBUG] {msg}")
+
+
 # Currency patterns - match number + currency
 CURRENCY_PATTERNS = [
-    r'(\d{1,3}(?:\s?\d{3})*(?:[.,]\d+)?)\s*(лв\.|лв|лева|lv|LV)',
-    r'(\d{1,3}(?:\s?\d{3})*(?:[.,]\d+)?)\s*(стотинки|ст\.)',
+    r'(\d+[\d\s\xa0]*(?:[.,]\d+)?)\s*(лв\.|лв|лева|lv|LV)',
+    r'(\d+[\d\s\xa0]*(?:[.,]\d+)?)\s*(стотинки|ст\.)',
 ]
 
-# Patterns WITH transliteration - check if words exist before currency
+# Patterns WITH transliteration
 SLASH_PATTERN = r'(\d[\d\s\xa0]*(?:[.,]\d+)?)\s*/([а-яА-Я\w\s]+)/\s*(?:лева|лв\.)'
 PAREN_PATTERN = r'(\d[\d\s\xa0]*(?:[.,]\d+)?)\s*\(([а-яА-Я\w\s]+)\)\s*(?:лева|лв\.)'
 
@@ -31,27 +39,35 @@ def convert_docx(input_path, output_path):
     """Convert DOCX file from BGN to EUR"""
     
     try:
+        debug_print(f"Opening: {input_path}")
+        
         # Load the document
         doc = Document(input_path)
         
+        conversions_made = 0
+        
         # Process each paragraph
         for paragraph in doc.paragraphs:
-            if paragraph.text:
-                try:
-                    paragraph.text = process_text(paragraph.text)
-                except Exception as e:
-                    print(f"Paragraph error: {e}")
+            if paragraph.text and paragraph.text.strip():
+                old_text = paragraph.text
+                new_text = process_text(paragraph.text)
+                if old_text != new_text:
+                    paragraph.text = new_text
+                    conversions_made += 1
         
         # Process each table
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
-                        if paragraph.text:
-                            try:
-                                paragraph.text = process_text(paragraph.text)
-                            except Exception as e:
-                                print(f"Table cell error: {e}")
+                        if paragraph.text and paragraph.text.strip():
+                            old_text = paragraph.text
+                            new_text = process_text(paragraph.text)
+                            if old_text != new_text:
+                                paragraph.text = new_text
+                                conversions_made += 1
+        
+        debug_print(f"Conversions made: {conversions_made}")
         
         # Save the document
         doc.save(output_path)
@@ -63,35 +79,42 @@ def convert_docx(input_path, output_path):
 
 def process_text(text):
     """Process text and replace BGN amounts with EUR"""
-    if not text:
+    if not text or not text.strip():
         return text
     
-    # Check if this text has transliteration (word in / or ())
-    text_has_transliteration = has_transliteration(text)
+    original_text = text
+    conversions = 0
     
-    # First: Handle slash patterns /word/ 
+    # Check if this text segment has transliteration
+    text_has_transliteration = has_transliteration(text)
+    if text_has_transliteration:
+        debug_print(f"Found transliteration in: {text[:100]}")
+    
+    # First: Handle slash patterns like "12 500 /дванадесет хиляди/ лева"
     matches = re.findall(SLASH_PATTERN, text, re.IGNORECASE)
     for match in matches:
         number_str = match[0]
         word_part = match[1].strip()
         
+        debug_print(f"Slash pattern: '{number_str}' /'{word_part}'/")
+        
         amount = parse_bulgarian_number(number_str)
         if amount is None:
+            debug_print(f"  Could not parse number: {number_str}")
             continue
         
         eur = convert_bgn_to_eur(amount)
         
-        # Convert the word part if it's a Bulgarian number
+        # Convert the word part
         word_num = word_to_number(word_part)
         if word_num and word_num > 0:
             word_eur = convert_bgn_to_eur(word_num)
             word_eur_words = format_eur_words(word_eur)
             output = f"{eur:.2f} /{word_eur_words}/"
         else:
-            # Keep original word format but convert the number
             output = f"{eur:.2f} /{word_part}/"
         
-        # Try different search patterns
+        # Replace
         search_variants = [
             f"{number_str} /{match[1]}/",
             f"{number_str}  /{match[1]}/",
@@ -99,13 +122,17 @@ def process_text(text):
         for search in search_variants:
             if search in text:
                 text = text.replace(search, output)
+                conversions += 1
+                debug_print(f"  Replaced: {search} -> {output}")
                 break
     
-    # Second: Handle parentheses patterns (word)
+    # Second: Handle parentheses patterns
     matches = re.findall(PAREN_PATTERN, text, re.IGNORECASE)
     for match in matches:
         number_str = match[0]
         word_part = match[1].strip()
+        
+        debug_print(f"Paren pattern: '{number_str}' ('{word_part}')/")
         
         amount = parse_bulgarian_number(number_str)
         if amount is None:
@@ -113,7 +140,6 @@ def process_text(text):
         
         eur = convert_bgn_to_eur(amount)
         
-        # Convert the word part
         word_num = word_to_number(word_part)
         if word_num and word_num > 0:
             word_eur = convert_bgn_to_eur(word_num)
@@ -129,6 +155,7 @@ def process_text(text):
         for search in search_variants:
             if search in text:
                 text = text.replace(search, output)
+                conversions += 1
                 break
     
     # Third: Handle simple currency patterns WITHOUT transliteration
@@ -138,27 +165,26 @@ def process_text(text):
             amount_str = match[0]
             currency = match[1]
             
-            # Parse the number
+            debug_print(f"Currency pattern: '{amount_str}' '{currency}'")
+            
             amount = parse_bulgarian_number(amount_str)
             if amount is None:
+                debug_print(f"  Could not parse: {amount_str}")
                 continue
             
-            # Convert to EUR
             eur = convert_bgn_to_eur(amount)
             
-            # Format output - only add words if original has transliteration
+            # Format output
             if currency.lower() in ['стотинки', 'ст.']:
                 output = f"{eur:.2f} евроцента"
             else:
                 if text_has_transliteration:
-                    # Include word conversion
                     eur_words = format_eur_words(eur)
                     output = f"{eur:.2f} {eur_words}"
                 else:
-                    # Number only, no words
                     output = f"{eur:.2f} евро"
             
-            # Replace in text - handle various spacing
+            # Try different spacing variants
             search_variants = [
                 f"{amount_str} {currency}",
                 f"{amount_str}  {currency}",
@@ -168,11 +194,17 @@ def process_text(text):
             for search in search_variants:
                 if search in text:
                     text = text.replace(search, output)
+                    conversions += 1
+                    debug_print(f"  Replaced: {search} -> {output}")
                     replaced = True
                     break
+            
             if not replaced:
-                # Try partial replacement
-                text = text.replace(amount_str, output.replace(" евро", "").replace(" евроцента", ""), 1)
+                # Try partial: just show what we would replace
+                debug_print(f"  NOT replaced - search variants: {search_variants}")
+    
+    if conversions > 0:
+        debug_print(f"Total conversions in text segment: {conversions}")
     
     return text
 
