@@ -107,7 +107,19 @@ def process_text(text):
     if not text or not text.strip():
         return text, []
     
-    # Clean up \xa0 first
+    # Check if text has Bulgarian currency indicator - if not, don't convert
+    # Use case-insensitive substring matching
+    currency_indicators = [
+        'лева', 'лев', 'лв.', 'лв', 'lv.', 'lv', 'LV', 
+        'BGN', 'leva', 'lev', 'български'
+    ]
+    text_lower = text.lower()
+    has_bgn_currency = any(ind.lower() in text_lower for ind in currency_indicators)
+    
+    if not has_bgn_currency:
+        return text, []
+    
+    # Clean up \xa0 (non-breaking space) first
     text = text.replace('\xa0', ' ')
     text = text.replace('\u00a0', ' ')
     
@@ -117,9 +129,12 @@ def process_text(text):
     # Check if transliteration exists in this text (any /.../ or (...))
     text_has_transliteration = has_transliteration(text)
     
-    # Pattern 1: Slash patterns like "50 /петдесет/ лева" 
-    slash_pattern = r'(\d[\d\s]*(?:[.,]\d+)?)\s*/([а-яА-Я\w\s]+)/\s*(?:лева|лв\.?)'
-    for match in re.findall(slash_pattern, text, re.IGNORECASE):
+    # Define all currency variations (lowercase + uppercase handled by regex)
+    currencies = r'лева|лев|лв\.?|лв|lv\.?|lv|LV|BGN|leva|lev|български\s*лева'
+    
+    # Pattern 1a: Currency AFTER slash: "50 /петдесет/ лева" or "100 000,00 /сто хиляди/ лв."
+    slash_pattern_after = rf'(\d[\d\s]*(?:[.,]\d+)?)\s*/([а-яА-Я\w\s]+)/\s*(?:{currencies})?'
+    for match in re.findall(slash_pattern_after, text, re.IGNORECASE):
         number_str = match[0].strip()
         word_part = match[1].strip()
         
@@ -128,25 +143,50 @@ def process_text(text):
             continue
         
         eur = convert_bgn_to_eur(amount)
-        
-        # Output: number + words in slashes
         eur_words = format_eur_words(eur)
         output = f"{eur:.2f} /{eur_words}/ евро"
         
-        search = f"{number_str} /{word_part}/ лева"
-        if search in text:
-            changes.append(f"{search} --> {output}")
-            text = text.replace(search, output)
-        else:
-            # Try without space before лева
-            search = f"{number_str} /{word_part}/лева"
+        # Try various currency suffixes
+        found = False
+        for suffix in [' лева', ' лев', ' лв.', ' лв', ' LV', ' LV.', ' lv.', ' lv', ' BGN', ' leva', ' LEVA', ' ЛЕВА', ' ЛЕВ', ' ЛВ.', ' ЛВ', '']:
+            search = f"{number_str} /{word_part}/{suffix}"
             if search in text:
                 changes.append(f"{search} --> {output}")
                 text = text.replace(search, output)
+                found = True
+                break
+        if not found:
+            for suffix in ['лева', 'лев', 'лв.', 'лв', 'LV', 'LV.', 'lv.', 'lv', 'BGN', 'leva', 'LEVA', 'ЛЕВА', 'ЛЕВ', 'Л�.', 'ЛВ', 'LEV']:
+                search = f"{number_str} /{word_part}/{suffix}"
+                if search in text:
+                    changes.append(f"{search} --> {output}")
+                    text = text.replace(search, output)
+                    found = True
+                    break
     
-    # Pattern 2: Paren patterns like "50 (петдесет) лева"
-    paren_pattern = r'(\d[\d\s]*(?:[.,]\d+)?)\s*\(([а-яА-Я\w\s]+)\)\s*(?:лева|лв\.?)'
-    for match in re.findall(paren_pattern, text, re.IGNORECASE):
+    # Pattern 1b: Currency BEFORE slash: "50 лв /петдесет/" or "100 000,00 lev /сто хиляди/"
+    slash_pattern_before = rf'(\d[\d\s]*(?:[.,]\d+)?)\s*({currencies})\s*/([а-яА-Я\w\s]+)/'
+    for match in re.findall(slash_pattern_before, text, re.IGNORECASE):
+        number_str = match[0].strip()
+        currency = match[1].strip()
+        word_part = match[2].strip()
+        
+        amount = parse_bulgarian_number(number_str)
+        if amount is None:
+            continue
+        
+        eur = convert_bgn_to_eur(amount)
+        eur_words = format_eur_words(eur)
+        output = f"{eur:.2f} /{eur_words}/ евро"
+        
+        search = f"{number_str} {currency} /{word_part}/"
+        if search in text:
+            changes.append(f"{search} --> {output}")
+            text = text.replace(search, output)
+    
+    # Pattern 2a: Currency AFTER paren: "50 (петдесет) лева" or "100 000,00 (сто хиляди) лв."
+    paren_pattern_after = rf'(\d[\d\s]*(?:[.,]\d+)?)\s*\(([а-яА-Я\w\s]+)\)\s*(?:{currencies})?'
+    for match in re.findall(paren_pattern_after, text, re.IGNORECASE):
         number_str = match[0].strip()
         
         amount = parse_bulgarian_number(number_str)
@@ -157,20 +197,45 @@ def process_text(text):
         eur_words = format_eur_words(eur)
         output = f"{eur:.2f} ({eur_words}) евро"
         
-        search = f"{number_str} ({match[1]}) лева"
-        if search in text:
-            changes.append(f"{search} --> {output}")
-            text = text.replace(search, output)
-        else:
-            # Try without space
-            search = f"{number_str} ({match[1]})лева"
+        # Try various currency suffixes
+        found = False
+        for suffix in [' лева', ' лев', ' лв.', ' лв', ' LV', ' LV.', ' lv.', ' lv', ' BGN', ' leva', '']:
+            search = f"{number_str} ({match[1]}){suffix}"
             if search in text:
                 changes.append(f"{search} --> {output}")
                 text = text.replace(search, output)
+                found = True
+                break
+        if not found:
+            for suffix in ['лева', 'лев', 'лв.', 'лв', 'LV', 'LV.', 'lv.', 'lv', 'BGN', 'leva']:
+                search = f"{number_str} ({match[1]}){suffix}"
+                if search in text:
+                    changes.append(f"{search} --> {output}")
+                    text = text.replace(search, output)
+                    found = True
+                    break
     
-    # Pattern 3: Simple currency (no words) - "100 лв." or "100 лева"
+    # Pattern 2b: Currency BEFORE paren: "50 лв (петдесет)" or "100 000,00 lev (сто хиляди)"
+    paren_pattern_before = rf'(\d[\d\s]*(?:[.,]\d+)?)\s*({currencies})\s*\(([а-яА-Я\w\s]+)\)'
+    for match in re.findall(paren_pattern_before, text, re.IGNORECASE):
+        number_str = match[0].strip()
+        
+        amount = parse_bulgarian_number(number_str)
+        if amount is None:
+            continue
+        
+        eur = convert_bgn_to_eur(amount)
+        eur_words = format_eur_words(eur)
+        output = f"{eur:.2f} ({eur_words}) евро"
+        
+        search = f"{number_str} {match[1]} ({match[2]})"
+        if search in text:
+            changes.append(f"{search} --> {output}")
+            text = text.replace(search, output)
+    
+    # Pattern 3: Simple currency (no words) - "100 лв." or "100 лева" or "100,00 BGN"
     currency_patterns = [
-        r'(\d[\d\s]*(?:[.,]\d+)?)\s*(лв\.|лв|лева|lv|LV)',
+        r'(\d[\d\s]*(?:[.,]\d+)?)\s*(лв\.|лв|лева|лев|lv\.?|lv|LV|BGN|български\s*лева|leva|LEV|LEVA|ЛЕВА|ЛЕВ|ЛВ\.|ЛВ)',
         r'(\d[\d\s]*(?:[.,]\d+)?)\s*(стотинки|ст\.)',
     ]
     

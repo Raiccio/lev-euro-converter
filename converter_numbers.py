@@ -114,7 +114,7 @@ def number_to_words_bulgarian(n):
         has_simple_ones = 0 < rest < 10
         has_thousands = rest >= 1000
         
-        # For millions, use "един" (not "едно") for 1
+        # For millions, use "един" (masculine) for 1, "два" for 2
         if millions == 1:
             result.append("един")
             result.append("милион")
@@ -145,7 +145,15 @@ def number_to_words_bulgarian(n):
             result.append("две")
             result.append("хиляди")
         else:
-            result.extend(process_triple(thousands))
+            thousands_result = process_triple(thousands)
+            
+            # Check if thousands ends in 1 (need feminine form "една" before "хиляди")
+            if thousands % 10 == 1:
+                for i, part in enumerate(thousands_result):
+                    if part == "едно":
+                        thousands_result[i] = "една"
+            
+            result.extend(thousands_result)
             result.append("хиляди")
         
         # "и" if hundreds or simple round tens or simple ones
@@ -265,8 +273,24 @@ def format_eur_words(amount_eur):
         euros += 1
         cents = 0
     
+    # Ensure cents are between 0-100 (integer only, no fractions)
+    if cents < 0:
+        cents = 0
+    if cents > 100:
+        cents = 100
+    
     if euros == 0 and cents == 0:
         return "нула евро"
+    
+    # Handle case where total is less than 1 euro - use only cents
+    if euros == 0 and cents > 0:
+        parts = []
+        parts.append(number_to_words_bulgarian(cents))
+        if cents == 1:
+            parts.append("евроцент")
+        else:
+            parts.append("евроцента")
+        return " ".join(parts)
     
     parts = []
     
@@ -275,8 +299,7 @@ def format_eur_words(amount_eur):
         parts.append("евро")
     
     if cents > 0:
-        if euros > 0:
-            parts.append("и")
+        parts.append("и")
         parts.append(number_to_words_bulgarian(cents))
         if cents == 1:
             parts.append("евроцент")
