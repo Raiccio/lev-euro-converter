@@ -5,17 +5,11 @@ on:
     types: [created]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            ext: .exe
-            name: lev-euro-converter-win64.exe
-          - os: ubuntu-latest
-            ext: ""
-            name: lev-euro-converter-linux
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,49 +22,27 @@ jobs:
       - name: Install dependencies
         run: pip install pyinstaller python-docx
 
-      - name: Build on Windows
-        if: matrix.os == 'windows-latest'
+      - name: Build Windows exe
+        shell: pwsh
         run: |
           pyinstaller --onefile --windowed main.py
-          mv dist/main.exe ${{ matrix.name }}
+          Move-Item dist/main.exe lev-euro-converter-win64.exe
 
-      - name: Build on Linux
-        if: matrix.os == 'ubuntu-latest'
+      - name: Calculate checksums
+        shell: pwsh
         run: |
-          pyinstaller --onefile main.py
-          mv dist/main ${{ matrix.name }}
-          chmod +x ${{ matrix.name }}
+          (Get-FileHash lev-euro-converter-win64.exe -Algorithm SHA256).Hash | Out-File -FilePath SHA256.txt -Encoding UTF8
+          (Get-FileHash lev-euro-converter-win64.exe -Algorithm MD5).Hash | Out-File -FilePath MD5.txt -Encoding UTF8
+          Get-Content SHA256.txt
 
-      - name: Calculate SHA256
-        run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            powershell -Command "(Get-FileHash -Path '${{ matrix.name }}' -Algorithm SHA256).Hash" > SHA256.txt
-          else
-            sha256sum ${{ matrix.name }} > SHA256.txt
-          fi
-          cat SHA256.txt
-
-      - name: Calculate MD5
-        run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            powershell -Command "(Get-FileHash -Path '${{ matrix.name }}' -Algorithm MD5).Hash" > MD5.txt
-          else
-            md5sum ${{ matrix.name }} > MD5.txt
-          fi
-
-      - name: Get Release Info
-        id: release
-        run: |
-          echo "upload_url=${{ github.event.release.upload_url }}" >> $GITHUB_OUTPUT
-
-      - name: Upload Binary
+      - name: Upload to Release
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.release.outputs.upload_url }}
-          asset_path: ${{ matrix.name }}
-          asset_name: ${{ matrix.name }}
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: lev-euro-converter-win64.exe
+          asset_name: lev-euro-converter-win64.exe
           asset_content_type: application/octet-stream
 
       - name: Upload SHA256
@@ -78,9 +50,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.release.outputs.upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: SHA256.txt
-          asset_name: SHA256-${{ matrix.name }}.txt
+          asset_name: SHA256-lev-euro-converter-win64.exe.txt
           asset_content_type: text/plain
 
       - name: Upload MD5
@@ -88,7 +60,66 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.release.outputs.upload_url }}
+          upload_url: ${{ github.event.release.upload_url }}
           asset_path: MD5.txt
-          asset_name: MD5-${{ matrix.name }}.txt
+          asset_name: MD5-lev-euro-converter-win64.exe.txt
+          asset_content_type: text/plain
+
+  build-linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyinstaller python-docx
+
+      - name: Build Linux binary
+        run: |
+          pyinstaller --onefile main.py
+          mv dist/main lev-euro-converter-linux
+          chmod +x lev-euro-converter-linux
+
+      - name: Calculate checksums
+        run: |
+          sha256sum lev-euro-converter-linux > SHA256.txt
+          md5sum lev-euro-converter-linux > MD5.txt
+          cat SHA256.txt
+
+      - name: Upload to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: lev-euro-converter-linux
+          asset_name: lev-euro-converter-linux
+          asset_content_type: application/octet-stream
+
+      - name: Upload SHA256
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: SHA256.txt
+          asset_name: SHA256-lev-euro-converter-linux.txt
+          asset_content_type: text/plain
+
+      - name: Upload MD5
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: MD5.txt
+          asset_name: MD5-lev-euro-converter-linux.txt
           asset_content_type: text/plain
