@@ -5,11 +5,10 @@ on:
     types: [created]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-latest, ubuntu-latest]
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
@@ -23,78 +22,67 @@ jobs:
       - name: Install dependencies
         run: pip install pyinstaller python-docx
 
-      - name: Build Windows
-        if: matrix.os == 'windows-latest'
+      - name: Build Windows exe
         run: |
+          pip install pyinstaller python-docx
           pyinstaller --onefile --windowed main.py
-          mv dist/main.exe dist/lev-euro-converter-win64.exe
+          mv dist/main.exe lev-euro-converter-win64.exe
+          ls -la lev-euro-converter-win64.exe
 
-      - name: Build Linux
-        if: matrix.os == 'ubuntu-latest'
+      - name: Build Linux binary
         run: |
           pyinstaller --onefile main.py
-          mv dist/main dist/lev-euro-converter-linux
-          chmod +x dist/lev-euro-converter-linux
-
-      - name: Upload Windows Release Asset
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: dist/lev-euro-converter-win64.exe
-          asset_name: lev-euro-converter-win64.exe
-          asset_content_type: application/octet-stream
-
-      - name: Upload Linux Release Asset
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: dist/lev-euro-converter-linux
-          asset_name: lev-euro-converter-linux
-          asset_content_type: application/octet-stream
-
-  checksums:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Download Windows exe
-        uses: actions/download-artifact@v4
-        with:
-          name: lev-euro-converter-win64.exe
-          path: windows
-
-      - name: Download Linux binary
-        uses: actions/download-artifact@v4
-        with:
-          name: lev-euro-converter-linux
-          path: linux
+          mv dist/main lev-euro-converter-linux
+          chmod +x lev-euro-converter-linux
+          ls -la lev-euro-converter-linux
 
       - name: Calculate checksums
         run: |
-          echo "SHA-256 Checksums" > SHA256SUMS.txt
-          echo "==================" >> SHA256SUMS.txt
-          sha256sum windows/lev-euro-converter-win64.exe >> SHA256SUMS.txt
-          sha256sum linux/lev-euro-converter-linux >> SHA256SUMS.txt
+          echo "lev-euro-converter-win64.exe:" > SHA256SUMS.txt
+          sha256sum lev-euro-converter-win64.exe >> SHA256SUMS.txt
           echo "" >> SHA256SUMS.txt
-          echo "MD5 Checksums" >> MD5SUMS.txt
-          echo "=============" >> MD5SUMS.txt
-          md5sum windows/lev-euro-converter-win64.exe >> MD5SUMS.txt
-          md5sum linux/lev-euro-converter-linux >> MD5SUMS.txt
+          echo "lev-euro-converter-linux:" >> SHA256SUMS.txt
+          sha256sum lev-euro-converter-linux >> SHA256SUMS.txt
+          
+          echo "lev-euro-converter-win64.exe:" > MD5SUMS.txt
+          md5sum lev-euro-converter-win64.exe >> MD5SUMS.txt
+          echo "" >> MD5SUMS.txt
+          echo "lev-euro-converter-linux:" >> MD5SUMS.txt
+          md5sum lev-euro-converter-linux >> MD5SUMS.txt
+          
+          cat SHA256SUMS.txt
+
+      - name: Get Release Info
+        id: release
+        run: |
+          echo "upload_url=${{ github.event.release.upload_url }}" >> $GITHUB_OUTPUT
+
+      - name: Upload Windows exe
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.release.outputs.upload_url }}
+          asset_path: lev-euro-converter-win64.exe
+          asset_name: lev-euro-converter-win64.exe
+          asset_content_type: application/octet-stream
+
+      - name: Upload Linux binary
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.release.outputs.upload_url }}
+          asset_path: lev-euro-converter-linux
+          asset_name: lev-euro-converter-linux
+          asset_content_type: application/octet-stream
 
       - name: Upload SHA256SUMS
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ github.event.release.upload_url }}
+          upload_url: ${{ steps.release.outputs.upload_url }}
           asset_path: SHA256SUMS.txt
           asset_name: SHA256SUMS.txt
           asset_content_type: text/plain
@@ -104,7 +92,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ github.event.release.upload_url }}
+          upload_url: ${{ steps.release.outputs.upload_url }}
           asset_path: MD5SUMS.txt
           asset_name: MD5SUMS.txt
           asset_content_type: text/plain
