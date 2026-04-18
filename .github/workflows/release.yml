@@ -5,10 +5,11 @@ on:
     types: [created]
 
 jobs:
-  build-and-release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
 
     steps:
       - name: Checkout code
@@ -22,33 +23,88 @@ jobs:
       - name: Install dependencies
         run: pip install pyinstaller python-docx
 
-      - name: Build Windows exe
+      - name: Build Windows
+        if: matrix.os == 'windows-latest'
         run: |
-          pip install pyinstaller python-docx
           pyinstaller --onefile --windowed main.py
           mv dist/main.exe dist/lev-euro-converter-win64.exe
 
-      - name: Build Linux binary
+      - name: Build Linux
+        if: matrix.os == 'ubuntu-latest'
         run: |
           pyinstaller --onefile main.py
           mv dist/main dist/lev-euro-converter-linux
           chmod +x dist/lev-euro-converter-linux
 
-      - name: Calculate checksums
-        run: |
-          cd dist
-          sha256sum lev-euro-converter-win64.exe > SHA256SUMS.txt
-          sha256sum lev-euro-converter-linux >> SHA256SUMS.txt
-          md5sum lev-euro-converter-win64.exe > MD5SUMS.txt
-          md5sum lev-euro-converter-linux >> MD5SUMS.txt
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/lev-euro-converter-win64.exe
-            dist/lev-euro-converter-linux
-            dist/SHA256SUMS.txt
-            dist/MD5SUMS.txt
+      - name: Upload Windows Release Asset
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: dist/lev-euro-converter-win64.exe
+          asset_name: lev-euro-converter-win64.exe
+          asset_content_type: application/octet-stream
+
+      - name: Upload Linux Release Asset
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: dist/lev-euro-converter-linux
+          asset_name: lev-euro-converter-linux
+          asset_content_type: application/octet-stream
+
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download Windows exe
+        uses: actions/download-artifact@v4
+        with:
+          name: lev-euro-converter-win64.exe
+          path: windows
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: lev-euro-converter-linux
+          path: linux
+
+      - name: Calculate checksums
+        run: |
+          echo "SHA-256 Checksums" > SHA256SUMS.txt
+          echo "==================" >> SHA256SUMS.txt
+          sha256sum windows/lev-euro-converter-win64.exe >> SHA256SUMS.txt
+          sha256sum linux/lev-euro-converter-linux >> SHA256SUMS.txt
+          echo "" >> SHA256SUMS.txt
+          echo "MD5 Checksums" >> MD5SUMS.txt
+          echo "=============" >> MD5SUMS.txt
+          md5sum windows/lev-euro-converter-win64.exe >> MD5SUMS.txt
+          md5sum linux/lev-euro-converter-linux >> MD5SUMS.txt
+
+      - name: Upload SHA256SUMS
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: SHA256SUMS.txt
+          asset_name: SHA256SUMS.txt
+          asset_content_type: text/plain
+
+      - name: Upload MD5SUMS
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: MD5SUMS.txt
+          asset_name: MD5SUMS.txt
+          asset_content_type: text/plain
