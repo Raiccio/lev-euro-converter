@@ -11,101 +11,108 @@ from converter_numbers import convert_bgn_to_eur, format_eur_words, parse_bulgar
 
 RATE = 1.95583
 
-# Debug flag - set to True to see what's happening
-DEBUG = False
-
-def debug_print(msg):
-    if DEBUG:
-        print(f"[DEBUG] {msg}")
-
-
-# Currency patterns - match number + currency
-CURRENCY_PATTERNS = [
-    r'(\d+[\d\s\xa0]*(?:[.,]\d+)?)\s*(лв\.|лв|лева|lv|LV)',
-    r'(\d+[\d\s\xa0]*(?:[.,]\d+)?)\s*(стотинки|ст\.)',
-]
-
-# Patterns WITH transliteration
-SLASH_PATTERN = r'(\d[\d\s\xa0]*(?:[.,]\d+)?)\s*/([а-яА-Я\w\s]+)/\s*(?:лева|лв\.)'
-PAREN_PATTERN = r'(\d[\d\s\xa0]*(?:[.,]\d+)?)\s*\(([а-яА-Я\w\s]+)\)\s*(?:лева|лв\.)'
-
-
-def has_transliteration(text):
-    """Check if text has word transliteration in / or ()"""
-    return bool(re.search(r'/[а-яА-Я\w]+/|/[а-яА-Я\w]+\)', text, re.IGNORECASE))
-
 
 def convert_docx(input_path, output_path):
-    """Convert DOCX file from BGN to EUR"""
+    """Convert DOCX file from BGN to EUR
     
+    Returns:
+        dict: {'success': bool, 'changes': list of str, 'error': str or None}
+    """
+    
+    changes = []
     try:
-        debug_print(f"Opening: {input_path}")
-        
-        # Load the document
         doc = Document(input_path)
-        
-        conversions_made = 0
         
         # Process each paragraph
         for paragraph in doc.paragraphs:
             if paragraph.text and paragraph.text.strip():
                 old_text = paragraph.text
-                new_text = process_text(paragraph.text)
-                if old_text != new_text:
+                new_text, section_changes = process_text(paragraph.text)
+                if section_changes:
+                    changes.extend(section_changes)
                     paragraph.text = new_text
-                    conversions_made += 1
         
-        # Process each table
+        # Process each table cell
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
                         if paragraph.text and paragraph.text.strip():
                             old_text = paragraph.text
-                            new_text = process_text(paragraph.text)
-                            if old_text != new_text:
+                            new_text, section_changes = process_text(paragraph.text)
+                            if section_changes:
+                                changes.extend(section_changes)
                                 paragraph.text = new_text
-                                conversions_made += 1
         
-        debug_print(f"Conversions made: {conversions_made}")
+        # Also process runs within paragraphs (some docx store text in runs)
+        for paragraph in doc.paragraphs:
+            for run in paragraph.runs:
+                if run.text and run.text.strip():
+                    old_text = run.text
+                    new_text, section_changes = process_text(run.text)
+                    if section_changes:
+                        changes.extend(section_changes)
+                        run.text = new_text
         
-        # Save the document
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        for run in paragraph.runs:
+                            if run.text and run.text.strip():
+                                old_text = run.text
+                                new_text, section_changes = process_text(run.text)
+                                if section_changes:
+                                    changes.extend(section_changes)
+                                    run.text = new_text
+        
         doc.save(output_path)
-        return output_path
+        
+        return {'success': True, 'changes': changes, 'error': None}
         
     except Exception as e:
-        raise Exception(f"Failed to convert {input_path}: {e}\n{traceback.format_exc()}")
+        return {'success': False, 'changes': changes, 'error': str(e)}
+
+
+def has_transliteration(text):
+    """Check if text has word transliteration"""
+    if not text:
+        return False
+    return bool(re.search(r'/[а-яА-Я\w]+/|/[а-яА-Я\w]+\)', text, re.IGNORECASE))
 
 
 def process_text(text):
-    """Process text and replace BGN amounts with EUR"""
+    """Process text and replace BGN amounts with EUR
+    
+    Returns:
+        tuple: (new_text, list_of_changes)
+    """
     if not text or not text.strip():
-        return text
+        return text, []
+    
+    # Clean up \xa0 (non-breaking space) first
+    text = text.replace('\xa0', ' ')
+    text = text.replace('\u00a0', ' ')
     
     original_text = text
-    conversions = 0
+    changes = []
     
-    # Check if this text segment has transliteration
+    # Check if transliteration exists in this text segment
     text_has_transliteration = has_transliteration(text)
-    if text_has_transliteration:
-        debug_print(f"Found transliteration in: {text[:100]}")
     
-    # First: Handle slash patterns like "12 500 /дванадесет хиляди/ лева"
-    matches = re.findall(SLASH_PATTERN, text, re.IGNORECASE)
-    for match in matches:
-        number_str = match[0]
+    # Pattern 1: Slash patterns /word/ like "50 /петдесет/ лева"
+    slash_pattern = r'(\d[\d\s]*(?:[.,]\d+)?)\s*/([а-яА-Я\w\s]+)/\s*(?:лева|лв\.?)'
+    for match in re.findall(slash_pattern, text, re.IGNORECASE):
+        number_str = match[0].strip()
         word_part = match[1].strip()
-        
-        debug_print(f"Slash pattern: '{number_str}' /'{word_part}'/")
         
         amount = parse_bulgarian_number(number_str)
         if amount is None:
-            debug_print(f"  Could not parse number: {number_str}")
             continue
         
         eur = convert_bgn_to_eur(amount)
         
-        # Convert the word part
+        # Convert word part
         word_num = word_to_number(word_part)
         if word_num and word_num > 0:
             word_eur = convert_bgn_to_eur(word_num)
@@ -114,25 +121,16 @@ def process_text(text):
         else:
             output = f"{eur:.2f} /{word_part}/"
         
-        # Replace
-        search_variants = [
-            f"{number_str} /{match[1]}/",
-            f"{number_str}  /{match[1]}/",
-        ]
-        for search in search_variants:
-            if search in text:
-                text = text.replace(search, output)
-                conversions += 1
-                debug_print(f"  Replaced: {search} -> {output}")
-                break
+        search = f"{number_str} /{match[1]}/"
+        if search in text:
+            changes.append(f"{search}лева --> {output}евро")
+            text = text.replace(search, output)
     
-    # Second: Handle parentheses patterns
-    matches = re.findall(PAREN_PATTERN, text, re.IGNORECASE)
-    for match in matches:
-        number_str = match[0]
+    # Pattern 2: Paren patterns (word) like "50 (петдесет) лева"
+    paren_pattern = r'(\d[\d\s]*(?:[.,]\d+)?)\s*\(([а-яА-Я\w\s]+)\)\s*(?:лева|лв\.?)'
+    for match in re.findall(paren_pattern, text, re.IGNORECASE):
+        number_str = match[0].strip()
         word_part = match[1].strip()
-        
-        debug_print(f"Paren pattern: '{number_str}' ('{word_part}')/")
         
         amount = parse_bulgarian_number(number_str)
         if amount is None:
@@ -148,33 +146,29 @@ def process_text(text):
         else:
             output = f"{eur:.2f} ({word_part})"
         
-        search_variants = [
-            f"{number_str} ({match[1]})",
-            f"{number_str}  ({match[1]})",
-        ]
-        for search in search_variants:
-            if search in text:
-                text = text.replace(search, output)
-                conversions += 1
-                break
+        search = f"{number_str} ({match[1]})"
+        if search in text:
+            changes.append(f"{search}лева --> {output}евро")
+            text = text.replace(search, output)
     
-    # Third: Handle simple currency patterns WITHOUT transliteration
-    for pattern in CURRENCY_PATTERNS:
-        matches = re.findall(pattern, text, re.IGNORECASE)
-        for match in matches:
-            amount_str = match[0]
+    # Pattern 3: Simple currency without words "100 лв." or "100 лева"
+    currency_patterns = [
+        r'(\d[\d\s]*(?:[.,]\d+)?)\s*(лв\.|лв|лева|lv|LV)',
+        r'(\d[\d\s]*(?:[.,]\d+)?)\s*(стотинки|ст\.)',
+    ]
+    
+    for pattern in currency_patterns:
+        for match in re.findall(pattern, text, re.IGNORECASE):
+            amount_str = match[0].strip()
             currency = match[1]
-            
-            debug_print(f"Currency pattern: '{amount_str}' '{currency}'")
             
             amount = parse_bulgarian_number(amount_str)
             if amount is None:
-                debug_print(f"  Could not parse: {amount_str}")
                 continue
             
             eur = convert_bgn_to_eur(amount)
             
-            # Format output
+            # Format output based on original having transliteration or not
             if currency.lower() in ['стотинки', 'ст.']:
                 output = f"{eur:.2f} евроцента"
             else:
@@ -184,33 +178,21 @@ def process_text(text):
                 else:
                     output = f"{eur:.2f} евро"
             
-            # Try different spacing variants
-            search_variants = [
-                f"{amount_str} {currency}",
-                f"{amount_str}  {currency}",
-                f"{amount_str}{currency}",
-            ]
-            replaced = False
-            for search in search_variants:
-                if search in text:
-                    text = text.replace(search, output)
-                    conversions += 1
-                    debug_print(f"  Replaced: {search} -> {output}")
-                    replaced = True
-                    break
-            
-            if not replaced:
-                # Try partial: just show what we would replace
-                debug_print(f"  NOT replaced - search variants: {search_variants}")
+            # Try different spacing
+            search = f"{amount_str} {currency}"
+            if search in text:
+                changes.append(f"{search} --> {output}")
+                text = text.replace(search, output)
+            elif f"{amount_str}  {currency}" in text:
+                text = text.replace(f"{amount_str}  {currency}", output)
+            elif f"{amount_str}{currency}" in text:
+                text = text.replace(f"{amount_str}{currency}", output)
     
-    if conversions > 0:
-        debug_print(f"Total conversions in text segment: {conversions}")
-    
-    return text
+    return text, changes
 
 
 def get_output_path(input_path):
-    """Generate output path with _eur suffix"""
+    """Generate output path"""
     dir_name = os.path.dirname(input_path)
     base_name = os.path.basename(input_path)
     name, ext = os.path.splitext(base_name)
