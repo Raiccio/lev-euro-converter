@@ -2,34 +2,40 @@
 
 Конвертиране на DOCX документи от лева в евро.
 
-## Употреба
-
-```bash
-lev-euro-converter.exe документ.docx
-```
-
-Ще създаде `документ_eur.docx` в същата папка.
-
 ## Инсталация
 
-1. Свали най-новия `.exe` от [Releases](https://github.com/raiccio/lev-euro-converter/releases)
-2. Постави до DOCX файловете
-3. Стартирай
+```powershell
+# Инсталирай необходимите библиотеки
+pip install python-docx pyinstaller
+```
+
+## Стартиране
+
+```powershell
+python main.py
+```
+
+## Запазване като .exe
+
+```powershell
+pyinstaller --onefile --name=lev-euro-converter --windowed main.py
+```
+
+## Употреба
+
+1. Кликни "Добави файлове" за да избереш DOCX файлове
+2. Прегледай списъка с избрани файлове
+3. Кликни "Конвертирай" за да конвертираш
+4. Конвертираните файлове се запазват в същата папка с _eur
+5. Кликни "Отвори папка" за да отвориш папката с конвертираните файлове
 
 ## Поддържани формати
 
 | Вход | Изход |
 |------|------|
-| `100 лв.` | `51.16 евро` |
-| `100,00 лв.` | `51.16 евро` |
-| `100 000,00 лв.` | `51 156,45 евро` |
-| `/петдесет/` | `/двадесет и пет евро и петдесет и осем евроцента/` |
-| `(петдесет)` | `(двадесет и пет евро и петдесет и осем евроцента)` |
-| `50 стотинки` | `25.58 евроцента` |
-
-## Курс
-
-1 EUR = 1.95583 BGN (фиксиран)
+| `100 лв.` | `51.16 евро петдесет и едно евро и шестнадесет евроцента` |
+| `100,00 лв.` | `51.16 евро...` |
+| `100 000,00 лв.` | `51 156,45 евро...` |
 
 ---
 
@@ -37,37 +43,32 @@ lev-euro-converter.exe документ.docx
 
 Convert DOCX documents from BGN to EUR.
 
-## Usage
-
-```bash
-lev-euro-converter.exe document.docx
-```
-
-Will create `document_eur.docx` in the same folder.
-
 ## Installation
 
-1. Download the latest `.exe` from [Releases](https://github.com/raiccio/lev-euro-converter/releases)
-2. Place next to your DOCX files
-3. Run
+```powershell
+pip install python-docx pyinstaller
+```
 
-## Supported Formats
+## Run
 
-| Input | Output |
-|-------|--------|
-| `100 лв.` | `51.16 евро` |
-| `100,00 лв.` | `51.16 евро` |
-| `100 000,00 лв.` | `51 156,45 евро` |
-| `/fifty/` | `/twenty-five euros and fifty-eight eurocents/` |
-| `(fifty)` | `(twenty-five euros and fifty-eight eurocents)` |
-| `50 стотинки` | `25.58 евроцента` |
+```powershell
+python main.py
+```
+
+## Build as .exe
+
+```powershell
+pyinstaller --onefile --name=lev-euro-converter --windowed main.py
+```
+
+## Usage
+
+1. Click "Добави файлове" to select DOCX files
+2. Review selected files in the list
+3. Click "Конвертирай" to convert
+4. Converted files are saved in same folder with _eur suffix
+5. Click "Отвори папка" to open the output folder
 
 ## Exchange Rate
 
 1 EUR = 1.95583 BGN (fixed)
-
-## Build
-
-```bash
-GOOS=windows GOARCH=amd64 go build -o lev-euro-converter.exe
-```
